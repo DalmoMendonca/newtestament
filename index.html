@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#f5f0e6" />
+  <title>The Twenty-Seven — New Testament Atlas</title>
+  <meta name="description" content="Explore the 27 canonical New Testament documents across chronology, length, Torah orientation, eschatology, Christology, Rome, ecclesial structure, and more." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,500;0,600;1,500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">AN INTERACTIVE NEW TESTAMENT ATLAS</div>
+        <h1>The Twenty-Seven</h1>
+        <p class="dek">Put any two dimensions on the axes and watch the canon reorganize itself.</p>
+      </div>
+      <button id="methodBtn" class="text-button">Method & sources</button>
+    </header>
+
+    <section class="controls" aria-label="Chart controls">
+      <label>
+        <span>X axis</span>
+        <select id="xSelect"></select>
+      </label>
+      <button id="swapBtn" class="swap" aria-label="Swap axes" title="Swap axes">⇄</button>
+      <label>
+        <span>Y axis</span>
+        <select id="ySelect"></select>
+      </label>
+      <label class="toggle-row">
+        <input id="uncertaintyToggle" type="checkbox" checked />
+        <span>Show uncertainty</span>
+      </label>
+    </section>
+
+    <section class="chart-card">
+      <div id="chart" role="img" aria-label="Scatter plot of New Testament books"></div>
+      <div id="axisSummary" class="axis-summary"></div>
+    </section>
+
+    <section class="legend-section">
+      <div class="section-kicker">Document families</div>
+      <div id="legend" class="legend"></div>
+    </section>
+
+    <section class="book-grid-wrap">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker">All 27 documents</div>
+          <h2>Browse the canon</h2>
+        </div>
+        <input id="bookSearch" class="search" placeholder="Find a book" aria-label="Find a book" />
+      </div>
+      <div id="bookGrid" class="book-grid"></div>
+    </section>
+
+    <footer>
+      <p>Designed as a historical-critical visualization aid. Interpretive axes are editorial models, not measurements of inspired value, theological truth, or moral worth.</p>
+    </footer>
+  </main>
+
+  <aside id="drawer" class="drawer" aria-hidden="true">
+    <button id="drawerClose" class="drawer-close" aria-label="Close">×</button>
+    <div id="drawerContent"></div>
+  </aside>
+  <div id="scrim" class="scrim" hidden></div>
+
+  <dialog id="methodDialog">
+    <button id="methodClose" class="dialog-close" aria-label="Close">×</button>
+    <div class="dialog-content">
+      <div class="section-kicker">Method & sources</div>
+      <h2>What the map is — and is not</h2>
+      <p>This project treats the New Testament as 27 distinct ancient documents, following the historical-critical spirit of Dale B. Martin’s Yale course. Quantitative dimensions are measurements or approximate scholarly ranges. Interpretive dimensions are deliberately transparent editorial estimates on a 0–100 scale.</p>
+      <p><strong>Date bars:</strong> broad scholarly ranges, intentionally wide where dating is contested. <strong>Greek length:</strong> approximate word counts; counts vary slightly by critical edition. <strong>Interpretive scores:</strong> comparative placements meant to provoke close reading, not to collapse scholarly disagreement into a fake precision.</p>
+      <p>Each selected document includes a short rationale and passages worth checking. Future versions can attach competing scholarly models to the same axis rather than pretending there is only one map.</p>
+      <div class="source-links">
+        <a href="https://oyc.yale.edu/religious-studies/rlst-152" target="_blank" rel="noreferrer">Open Yale Courses — RLST 152</a>
+        <a href="https://github.com/morphgnt/sblgnt" target="_blank" rel="noreferrer">SBLGNT / MorphGNT</a>
+      </div>
+    </div>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
