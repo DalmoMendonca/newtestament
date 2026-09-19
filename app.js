@@ -70,6 +70,7 @@ const drawer=document.getElementById('drawer');
 const drawerContent=document.getElementById('drawerContent');
 const scrim=document.getElementById('scrim');
 const legend=document.getElementById('legend');
+let lastPlotPoints=[];
 const tooltip=document.createElement('div');
 tooltip.className='tooltip';
 document.body.appendChild(tooltip);
@@ -124,7 +125,7 @@ function placeLabels(points, bounds){
     {dx:0,dy:19,anchor:'middle'}
   ];
   return points.map((p,idx)=>{
-    const tw=Math.max(18,p.b.short.length*5.5), th=10;
+    const tw=Math.max(20,p.b.short.length*6.1), th=11;
     let chosen=null, box=null;
     for(const c of candidates){
       const tx=p.x+c.dx, ty=p.y+c.dy;
@@ -165,6 +166,7 @@ function renderChart(){
   const tickFmt=(key,v)=>key==='date'?Math.round(v):key==='words'?(Math.round(v/100)/10)+'k':Math.round(v);
 
   const points=books.map((b,i)=>({b,i,x:sx(valueFor(b,xKey)),y:sy(valueFor(b,yKey))}));
+  lastPlotPoints=points;
   const placements=placeLabels(points,{l:m.l+2,r:m.l+pw-2,t:m.t+2,b:m.t+ph-2});
 
   let svg='<svg viewBox="0 0 '+w+' '+h+'" aria-hidden="true">';
@@ -205,7 +207,7 @@ function renderChart(){
     svg+='<g class="point'+selected+'" data-book="'+p.i+'" tabindex="0" role="button" aria-label="'+esc(b.name)+'">';
     svg+='<circle class="dot-ring" cx="'+x+'" cy="'+y+'" r="9.5" fill="none" stroke="'+c+'" stroke-width="1.2"/>';
     svg+='<circle cx="'+x+'" cy="'+y+'" r="'+(mobile?5.2:5.7)+'" fill="'+c+'" stroke="#f7f6f1" stroke-width="1.3"/>';
-    svg+='<circle class="hit" cx="'+x+'" cy="'+y+'" r="'+(mobile?21:15)+'" fill="transparent"/>';
+    svg+='<circle class="hit" cx="'+x+'" cy="'+y+'" r="'+(mobile?14:13)+'" fill="transparent"/>';
     svg+='<text class="point-label" x="'+tx+'" y="'+ty+'" text-anchor="'+chosen.anchor+'">'+esc(b.short)+'</text>';
     svg+='</g>';
   });
@@ -259,6 +261,20 @@ function closeDrawer(){
   renderChart();
 }
 
+
+chart.addEventListener('click',e=>{
+  if(e.target.closest&&e.target.closest('.point')) return;
+  if(!lastPlotPoints.length) return;
+  const rect=chart.getBoundingClientRect();
+  const px=(e.clientX-rect.left)*(chart.clientWidth/rect.width);
+  const py=(e.clientY-rect.top)*(chart.clientHeight/rect.height);
+  let nearest=null, best=Infinity;
+  for(const p of lastPlotPoints){
+    const d=Math.hypot(p.x-px,p.y-py);
+    if(d<best){ best=d; nearest=p; }
+  }
+  if(nearest&&best<=30) openDrawer(nearest.b);
+});
 document.getElementById('drawerClose').addEventListener('click',closeDrawer);
 scrim.addEventListener('click',closeDrawer);
 document.getElementById('swapBtn').addEventListener('click',()=>{
