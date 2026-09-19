@@ -24,7 +24,7 @@ button{touch-action:manipulation}
 .utility-button:first-child{border-left:0}
 .utility-button:hover{background:rgba(17,17,15,.035)}
 .utility-button:focus-visible,.swap:focus-visible,.axis-select:focus-within{outline:2px solid var(--ink);outline-offset:-2px}
-.utility-button.is-on{background:var(--ink);color:var(--paper)}
+.utility-button.is-on{background:transparent;color:var(--ink);box-shadow:inset 0 -2px 0 var(--ink)}
 .utility-button:disabled{opacity:.28;background:transparent;color:var(--muted)}
 .utility-text{width:48px;font-size:12px}
 .axis-controls{display:grid;grid-template-columns:minmax(0,1fr) 42px minmax(0,1fr);align-items:stretch;border-bottom:1px solid var(--line);background:var(--paper)}
@@ -39,7 +39,7 @@ button{touch-action:manipulation}
 .tap-hint{position:absolute;right:10px;bottom:7px;font:500 9px/1 var(--mono);letter-spacing:.04em;color:var(--faint);pointer-events:none}
 .point{cursor:pointer}
 .point .hit{pointer-events:all}
-.point-label{font-family:var(--mono);font-size:9px;font-weight:650;letter-spacing:-.03em;fill:#292923;paint-order:stroke;stroke:var(--paper);stroke-width:3px;stroke-linejoin:round;pointer-events:none}
+.point-label{font-family:var(--mono);font-size:10px;font-weight:650;letter-spacing:-.03em;fill:#292923;paint-order:stroke;stroke:var(--paper);stroke-width:3px;stroke-linejoin:round;pointer-events:none}
 .point.selected .dot-ring{opacity:1}
 .dot-ring{opacity:0}
 .tooltip{position:fixed;z-index:60;pointer-events:none;background:var(--ink);color:var(--paper);padding:8px 9px;font:500 11px/1.45 var(--sans);max-width:230px;opacity:0}
