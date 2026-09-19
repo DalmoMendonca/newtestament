@@ -65,96 +65,230 @@ B('Revelation','Rev','revelation',[90,96],9852,{torah:70,audience:72,eschatology
 const xSelect=document.getElementById('xSelect');
 const ySelect=document.getElementById('ySelect');
 const chart=document.getElementById('chart');
-const legend=document.getElementById('legend');
-const axisSummary=document.getElementById('axisSummary');
 const uncertaintyToggle=document.getElementById('uncertaintyToggle');
 const drawer=document.getElementById('drawer');
 const drawerContent=document.getElementById('drawerContent');
 const scrim=document.getElementById('scrim');
-const tooltip=document.createElement('div'); tooltip.className='tooltip'; document.body.appendChild(tooltip);
+const legend=document.getElementById('legend');
+const tooltip=document.createElement('div');
+tooltip.className='tooltip';
+document.body.appendChild(tooltip);
 
 for(const [key,d] of Object.entries(dimensions)){
-  const a=document.createElement('option');a.value=key;a.textContent=d.label;xSelect.appendChild(a);
-  const b=document.createElement('option');b.value=key;b.textContent=d.label;ySelect.appendChild(b);
+  const a=document.createElement('option'); a.value=key; a.textContent=d.label; xSelect.appendChild(a);
+  const b=document.createElement('option'); b.value=key; b.textContent=d.label; ySelect.appendChild(b);
 }
-xSelect.value='date';ySelect.value='torah';
 
-function valueFor(book,key){return book[key] ?? 0}
-function domainFor(key){const d=dimensions[key]; return d.kind==='score'?[0,100]:[d.min,d.max]}
-function formatValue(book,key){const d=dimensions[key]; if(key==='date') return `${book.dateMin}–${book.dateMax} CE`; if(key==='words') return `${book.words.toLocaleString()} words`; return `${Math.round(book[key])}/100`}
-function scale(v,a,b,c,d){return c+(v-a)*(d-c)/(b-a)}
-function labelAnchor(i){return ['start','start','end','end'][i%4]}
-function labelDx(i){return [9,9,-9,-9][i%4]}
-function labelDy(i){return [-8,15,-8,15][i%4]}
+const query=new URLSearchParams(location.search);
+xSelect.value=dimensions[query.get('x')]?query.get('x'):'date';
+ySelect.value=dimensions[query.get('y')]?query.get('y'):'torah';
+if(xSelect.value===ySelect.value) ySelect.value=xSelect.value==='torah'?'apocalypse':'torah';
+
+let selectedBook=null;
+let uncertaintyOn=true;
+
+function valueFor(book,key){ return book[key] ?? 0; }
+function domainFor(key){ const d=dimensions[key]; return d.kind==='score'?[0,100]:[d.min,d.max]; }
+function formatValue(book,key){
+  if(key==='date') return book.dateMin+'–'+book.dateMax+' CE';
+  if(key==='words') return book.words.toLocaleString()+' words';
+  return Math.round(book[key])+'/100';
+}
+function scale(v,a,b,c,d){ return c+(v-a)*(d-c)/(b-a); }
+function esc(s){ return String(s).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+
+function syncUrl(){
+  const u=new URL(location.href);
+  u.searchParams.set('x',xSelect.value);
+  u.searchParams.set('y',ySelect.value);
+  history.replaceState(null,'',u);
+}
+function syncUncertaintyControl(){
+  const relevant=xSelect.value==='date'||ySelect.value==='date';
+  uncertaintyToggle.disabled=!relevant;
+  uncertaintyToggle.classList.toggle('is-on',relevant&&uncertaintyOn);
+  uncertaintyToggle.setAttribute('aria-pressed',String(relevant&&uncertaintyOn));
+}
+
+function intersects(a,b,pad=2){
+  return !(a.r+pad<b.l || a.l-pad>b.r || a.b+pad<b.t || a.t-pad>b.b);
+}
+function placeLabels(points, bounds){
+  const occupied=[];
+  const candidates=[
+    {dx:8,dy:-8,anchor:'start'},
+    {dx:8,dy:13,anchor:'start'},
+    {dx:-8,dy:-8,anchor:'end'},
+    {dx:-8,dy:13,anchor:'end'},
+    {dx:0,dy:-13,anchor:'middle'},
+    {dx:0,dy:19,anchor:'middle'}
+  ];
+  return points.map((p,idx)=>{
+    const tw=Math.max(18,p.b.short.length*5.5), th=10;
+    let chosen=null, box=null;
+    for(const c of candidates){
+      const tx=p.x+c.dx, ty=p.y+c.dy;
+      let l=tx, r=tx+tw;
+      if(c.anchor==='end'){ l=tx-tw; r=tx; }
+      if(c.anchor==='middle'){ l=tx-tw/2; r=tx+tw/2; }
+      const test={l,r,t:ty-th,b:ty+2};
+      if(test.l<bounds.l || test.r>bounds.r || test.t<bounds.t || test.b>bounds.b) continue;
+      if(!occupied.some(o=>intersects(test,o,1))){
+        chosen=c; box=test; break;
+      }
+    }
+    if(!chosen){
+      chosen=candidates[idx%candidates.length];
+      const tx=p.x+chosen.dx, ty=p.y+chosen.dy;
+      let l=tx, r=tx+tw;
+      if(chosen.anchor==='end'){ l=tx-tw; r=tx; }
+      if(chosen.anchor==='middle'){ l=tx-tw/2; r=tx+tw/2; }
+      box={l,r,t:ty-th,b:ty+2};
+    }
+    occupied.push(box);
+    return chosen;
+  });
+}
 
 function renderChart(){
-  const xKey=xSelect.value,yKey=ySelect.value,xd=dimensions[xKey],yd=dimensions[yKey];
-  const w=Math.max(760, chart.clientWidth||1000); const mobile=window.innerWidth<700; const h=mobile?520:700;
-  const m={l:mobile?58:82,r:mobile?28:54,t:42,b:72};
-  const pw=w-m.l-m.r, ph=h-m.t-m.b; const [xmin,xmax]=domainFor(xKey), [ymin,ymax]=domainFor(yKey);
-  const sx=v=>scale(v,xmin,xmax,m.l,m.l+pw); const sy=v=>scale(v,ymin,ymax,m.t+ph,m.t);
-  let svg=`<svg viewBox="0 0 ${w} ${h}" aria-hidden="true">`;
-  for(let i=0;i<=5;i++){
-    const tx=m.l+pw*i/5, ty=m.t+ph*i/5;
-    svg+=`<line x1="${tx}" y1="${m.t}" x2="${tx}" y2="${m.t+ph}" stroke="#ded6ca" stroke-width="1"/>`;
-    svg+=`<line x1="${m.l}" y1="${ty}" x2="${m.l+pw}" y2="${ty}" stroke="#ded6ca" stroke-width="1"/>`;
-  }
-  svg+=`<line x1="${m.l}" y1="${m.t+ph}" x2="${m.l+pw}" y2="${m.t+ph}" stroke="#887f74"/><line x1="${m.l}" y1="${m.t}" x2="${m.l}" y2="${m.t+ph}" stroke="#887f74"/>`;
-  const tickFmt=(key,v)=> key==='date'?Math.round(v):key==='words'?Math.round(v/1000)+'k':Math.round(v);
-  for(let i=0;i<=5;i++){
-    const xv=xmin+(xmax-xmin)*i/5, yv=ymax-(ymax-ymin)*i/5;
-    svg+=`<text x="${m.l+pw*i/5}" y="${m.t+ph+23}" text-anchor="middle" font-size="10" fill="#756d63">${tickFmt(xKey,xv)}</text>`;
-    svg+=`<text x="${m.l-10}" y="${m.t+ph*i/5+3}" text-anchor="end" font-size="10" fill="#756d63">${tickFmt(yKey,yv)}</text>`;
-  }
-  svg+=`<text x="${m.l+pw/2}" y="${h-20}" text-anchor="middle" font-size="12" font-weight="600" fill="#3f3932">${xd.label}  ·  ${xd.left} → ${xd.right}</text>`;
-  svg+=`<text transform="translate(18 ${m.t+ph/2}) rotate(-90)" text-anchor="middle" font-size="12" font-weight="600" fill="#3f3932">${yd.label}  ·  ${yd.left} → ${yd.right}</text>`;
+  syncUncertaintyControl();
+  const xKey=xSelect.value, yKey=ySelect.value, xd=dimensions[xKey], yd=dimensions[yKey];
+  const w=Math.max(280,chart.clientWidth||360);
+  const h=Math.max(330,chart.clientHeight||520);
+  const mobile=w<700;
+  const m=mobile?{l:38,r:14,t:18,b:34}:{l:52,r:22,t:22,b:38};
+  const pw=w-m.l-m.r, ph=h-m.t-m.b;
+  const [xmin,xmax]=domainFor(xKey), [ymin,ymax]=domainFor(yKey);
+  const sx=v=>scale(v,xmin,xmax,m.l,m.l+pw);
+  const sy=v=>scale(v,ymin,ymax,m.t+ph,m.t);
+  const steps=mobile?4:5;
+  const tickFmt=(key,v)=>key==='date'?Math.round(v):key==='words'?(Math.round(v/100)/10)+'k':Math.round(v);
 
-  books.forEach((b,i)=>{
-    const x=sx(valueFor(b,xKey)), y=sy(valueFor(b,yKey)), c=families[b.family].color;
-    if(uncertaintyToggle.checked && xKey==='date'){
-      svg+=`<line x1="${sx(b.dateMin)}" y1="${y}" x2="${sx(b.dateMax)}" y2="${y}" stroke="${c}" stroke-width="2" opacity=".36"/><line x1="${sx(b.dateMin)}" y1="${y-4}" x2="${sx(b.dateMin)}" y2="${y+4}" stroke="${c}" opacity=".5"/><line x1="${sx(b.dateMax)}" y1="${y-4}" x2="${sx(b.dateMax)}" y2="${y+4}" stroke="${c}" opacity=".5"/>`;
+  const points=books.map((b,i)=>({b,i,x:sx(valueFor(b,xKey)),y:sy(valueFor(b,yKey))}));
+  const placements=placeLabels(points,{l:m.l+2,r:m.l+pw-2,t:m.t+2,b:m.t+ph-2});
+
+  let svg='<svg viewBox="0 0 '+w+' '+h+'" aria-hidden="true">';
+  for(let i=0;i<=steps;i++){
+    const tx=m.l+pw*i/steps, ty=m.t+ph*i/steps;
+    svg+='<line x1="'+tx+'" y1="'+m.t+'" x2="'+tx+'" y2="'+(m.t+ph)+'" stroke="#e5e2d9" stroke-width="1"/>';
+    svg+='<line x1="'+m.l+'" y1="'+ty+'" x2="'+(m.l+pw)+'" y2="'+ty+'" stroke="#e5e2d9" stroke-width="1"/>';
+  }
+  svg+='<line x1="'+m.l+'" y1="'+(m.t+ph)+'" x2="'+(m.l+pw)+'" y2="'+(m.t+ph)+'" stroke="#77766f" stroke-width="1"/>';
+  svg+='<line x1="'+m.l+'" y1="'+m.t+'" x2="'+m.l+'" y2="'+(m.t+ph)+'" stroke="#77766f" stroke-width="1"/>';
+
+  for(let i=0;i<=steps;i++){
+    const xv=xmin+(xmax-xmin)*i/steps, yv=ymax-(ymax-ymin)*i/steps;
+    svg+='<text x="'+(m.l+pw*i/steps)+'" y="'+(m.t+ph+16)+'" text-anchor="middle" font-family="var(--mono)" font-size="'+(mobile?8:9)+'" fill="#77766f">'+esc(tickFmt(xKey,xv))+'</text>';
+    svg+='<text x="'+(m.l-7)+'" y="'+(m.t+ph*i/steps+3)+'" text-anchor="end" font-family="var(--mono)" font-size="'+(mobile?8:9)+'" fill="#77766f">'+esc(tickFmt(yKey,yv))+'</text>';
+  }
+
+  svg+='<text x="'+(m.l+3)+'" y="'+(m.t+11)+'" text-anchor="start" font-family="var(--mono)" font-size="'+(mobile?7.5:8.5)+'" fill="#77766f">'+esc(yd.right)+'</text>';
+  svg+='<text x="'+(m.l+3)+'" y="'+(m.t+ph-6)+'" text-anchor="start" font-family="var(--mono)" font-size="'+(mobile?7.5:8.5)+'" fill="#77766f">'+esc(yd.left)+'</text>';
+  svg+='<text x="'+m.l+'" y="'+(h-5)+'" text-anchor="start" font-family="var(--mono)" font-size="'+(mobile?7.5:8.5)+'" fill="#77766f">'+esc(xd.left)+'</text>';
+  svg+='<text x="'+(m.l+pw)+'" y="'+(h-5)+'" text-anchor="end" font-family="var(--mono)" font-size="'+(mobile?7.5:8.5)+'" fill="#77766f">'+esc(xd.right)+'</text>';
+
+  points.forEach((p,idx)=>{
+    const b=p.b, c=families[b.family].color, x=p.x, y=p.y;
+    if(uncertaintyOn && xKey==='date'){
+      svg+='<line x1="'+sx(b.dateMin)+'" y1="'+y+'" x2="'+sx(b.dateMax)+'" y2="'+y+'" stroke="'+c+'" stroke-width="1.2" opacity=".42"/>';
+      svg+='<line x1="'+sx(b.dateMin)+'" y1="'+(y-3)+'" x2="'+sx(b.dateMin)+'" y2="'+(y+3)+'" stroke="'+c+'" opacity=".52"/>';
+      svg+='<line x1="'+sx(b.dateMax)+'" y1="'+(y-3)+'" x2="'+sx(b.dateMax)+'" y2="'+(y+3)+'" stroke="'+c+'" opacity=".52"/>';
     }
-    if(uncertaintyToggle.checked && yKey==='date'){
-      svg+=`<line x1="${x}" y1="${sy(b.dateMin)}" x2="${x}" y2="${sy(b.dateMax)}" stroke="${c}" stroke-width="2" opacity=".36"/><line x1="${x-4}" y1="${sy(b.dateMin)}" x2="${x+4}" y2="${sy(b.dateMin)}" stroke="${c}" opacity=".5"/><line x1="${x-4}" y1="${sy(b.dateMax)}" x2="${x+4}" y2="${sy(b.dateMax)}" stroke="${c}" opacity=".5"/>`;
+    if(uncertaintyOn && yKey==='date'){
+      svg+='<line x1="'+x+'" y1="'+sy(b.dateMin)+'" x2="'+x+'" y2="'+sy(b.dateMax)+'" stroke="'+c+'" stroke-width="1.2" opacity=".42"/>';
+      svg+='<line x1="'+(x-3)+'" y1="'+sy(b.dateMin)+'" x2="'+(x+3)+'" y2="'+sy(b.dateMin)+'" stroke="'+c+'" opacity=".52"/>';
+      svg+='<line x1="'+(x-3)+'" y1="'+sy(b.dateMax)+'" x2="'+(x+3)+'" y2="'+sy(b.dateMax)+'" stroke="'+c+'" opacity=".52"/>';
     }
-    if(uncertaintyToggle.checked && xd.kind==='score' && yd.kind==='score'){
-      const r=8+(1-b.confidence)*18; svg+=`<circle cx="${x}" cy="${y}" r="${r}" fill="${c}" opacity=".08"/>`;
-    }
-    svg+=`<g class="point" data-book="${i}" tabindex="0" role="button" aria-label="${b.name}"><circle cx="${x}" cy="${y}" r="7" fill="${c}" stroke="#fffdf8" stroke-width="2"/><circle cx="${x}" cy="${y}" r="13" fill="transparent"/>`;
-    if(!mobile) svg+=`<text x="${x+labelDx(i)}" y="${y+labelDy(i)}" text-anchor="${labelAnchor(i)}" font-family="Inter, sans-serif" font-size="10" font-weight="600" fill="#29251f">${b.short}</text>`;
-    svg+=`</g>`;
+    const chosen=placements[idx];
+    const tx=x+chosen.dx, ty=y+chosen.dy;
+    const selected=selectedBook===b.name?' selected':'';
+    svg+='<g class="point'+selected+'" data-book="'+p.i+'" tabindex="0" role="button" aria-label="'+esc(b.name)+'">';
+    svg+='<circle class="dot-ring" cx="'+x+'" cy="'+y+'" r="9.5" fill="none" stroke="'+c+'" stroke-width="1.2"/>';
+    svg+='<circle cx="'+x+'" cy="'+y+'" r="'+(mobile?5.2:5.7)+'" fill="'+c+'" stroke="#f7f6f1" stroke-width="1.3"/>';
+    svg+='<circle class="hit" cx="'+x+'" cy="'+y+'" r="'+(mobile?21:15)+'" fill="transparent"/>';
+    svg+='<text class="point-label" x="'+tx+'" y="'+ty+'" text-anchor="'+chosen.anchor+'">'+esc(b.short)+'</text>';
+    svg+='</g>';
   });
-  svg+='</svg>'; chart.innerHTML=svg;
-  axisSummary.innerHTML=`<span><strong>${xd.label}</strong>: ${xd.description}</span><span><strong>${yd.label}</strong>: ${yd.description}</span>`;
+  svg+='</svg>';
+  chart.innerHTML=svg;
+
   chart.querySelectorAll('.point').forEach(el=>{
     const b=books[+el.dataset.book];
-    const show=e=>{tooltip.innerHTML=`<strong>${b.name}</strong>${dimensions[xKey].label}: ${formatValue(b,xKey)}<br>${dimensions[yKey].label}: ${formatValue(b,yKey)}`;tooltip.style.opacity='1';move(e)};
-    const move=e=>{const px=e.clientX??window.innerWidth/2,py=e.clientY??window.innerHeight/2;tooltip.style.left=Math.min(px+14,window.innerWidth-235)+'px';tooltip.style.top=Math.min(py+14,window.innerHeight-90)+'px'};
-    el.addEventListener('mouseenter',show);el.addEventListener('mousemove',move);el.addEventListener('mouseleave',()=>tooltip.style.opacity='0');
-    el.addEventListener('click',()=>openDrawer(b));el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openDrawer(b)}})
+    const move=e=>{
+      const px=e.clientX||window.innerWidth/2, py=e.clientY||window.innerHeight/2;
+      tooltip.style.left=Math.min(px+12,window.innerWidth-240)+'px';
+      tooltip.style.top=Math.min(py+12,window.innerHeight-90)+'px';
+    };
+    const show=e=>{
+      tooltip.innerHTML='<strong>'+esc(b.name)+'</strong>'+esc(dimensions[xKey].label)+': '+esc(formatValue(b,xKey))+'<br>'+esc(dimensions[yKey].label)+': '+esc(formatValue(b,yKey));
+      tooltip.style.opacity='1'; move(e);
+    };
+    el.addEventListener('mouseenter',show);
+    el.addEventListener('mousemove',move);
+    el.addEventListener('mouseleave',()=>tooltip.style.opacity='0');
+    el.addEventListener('click',()=>openDrawer(b));
+    el.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); openDrawer(b); } });
   });
 }
 
 function openDrawer(b){
-  const f=families[b.family]; const scoreKeys=['torah','eschatology','christology','church','rome','wealth','household','theology','apocalypse'];
+  selectedBook=b.name;
+  const f=families[b.family], xKey=xSelect.value, yKey=ySelect.value;
+  const scoreKeys=['torah','audience','eschatology','christology','church','rome','wealth','household','universal','genre','autobiographical','theology','apocalypse'];
   drawer.style.setProperty('--book-color',f.color);
-  drawerContent.innerHTML=`<div class="section-kicker">DOCUMENT PROFILE</div><h2>${b.name}</h2><div class="family-line">${f.label}</div>
-  <p style="font-family:'EB Garamond',Georgia,serif;font-size:21px;line-height:1.4;color:#403a33">${b.profile}</p>
-  <div class="fact-grid"><div class="fact"><div class="fact-label">Probable date</div><div class="fact-value">${b.dateMin}–${b.dateMax}</div></div><div class="fact"><div class="fact-label">Greek length</div><div class="fact-value">${b.words.toLocaleString()}</div></div></div>
-  <div>${scoreKeys.map(k=>`<div class="score-row"><span>${dimensions[k].label}</span><div class="score-track"><div class="score-fill" style="--score:${b[k]}%"></div></div><div class="score-num">${b[k]}</div></div>`).join('')}</div>
-  <div class="rationale"><h3>Why these placements?</h3><p>The scores synthesize a comparative historical-critical reading of the document rather than claiming mathematical certainty. Read the passages below against the same axes and decide where you would move it.</p><div class="refs"><strong>Passages to inspect:</strong> ${b.refs}</div></div>`;
-  drawer.classList.add('open');drawer.setAttribute('aria-hidden','false');scrim.hidden=false;
+  drawerContent.innerHTML=
+    '<div class="drawer-kicker">Document</div>'+
+    '<h2 class="drawer-title">'+esc(b.name)+'</h2>'+
+    '<div class="family-line">'+esc(f.label)+'</div>'+
+    '<p class="profile">'+esc(b.profile)+'</p>'+
+    '<div class="current-values">'+
+      '<div class="current-value"><small>'+esc(dimensions[xKey].label)+'</small><strong>'+esc(formatValue(b,xKey))+'</strong></div>'+
+      '<div class="current-value"><small>'+esc(dimensions[yKey].label)+'</small><strong>'+esc(formatValue(b,yKey))+'</strong></div>'+
+    '</div>'+
+    '<div class="score-table">'+scoreKeys.map(k=>'<div class="score-row"><span>'+esc(dimensions[k].label)+'</span><div class="score-num">'+Math.round(b[k])+'</div></div>').join('')+'</div>'+
+    '<div class="refs"><strong>Passages to inspect:</strong> '+esc(b.refs)+'</div>';
+  drawer.classList.add('open');
+  drawer.setAttribute('aria-hidden','false');
+  scrim.hidden=false;
+  renderChart();
 }
-function closeDrawer(){drawer.classList.remove('open');drawer.setAttribute('aria-hidden','true');scrim.hidden=true}
+function closeDrawer(){
+  drawer.classList.remove('open');
+  drawer.setAttribute('aria-hidden','true');
+  scrim.hidden=true;
+  renderChart();
+}
 
-document.getElementById('drawerClose').onclick=closeDrawer;scrim.onclick=closeDrawer;
-document.getElementById('swapBtn').onclick=()=>{const a=xSelect.value;xSelect.value=ySelect.value;ySelect.value=a;renderChart()};
-xSelect.onchange=renderChart;ySelect.onchange=renderChart;uncertaintyToggle.onchange=renderChart;window.addEventListener('resize',()=>{clearTimeout(window.__rt);window.__rt=setTimeout(renderChart,120)});
+document.getElementById('drawerClose').addEventListener('click',closeDrawer);
+scrim.addEventListener('click',closeDrawer);
+document.getElementById('swapBtn').addEventListener('click',()=>{
+  const a=xSelect.value; xSelect.value=ySelect.value; ySelect.value=a; syncUrl(); renderChart();
+});
+xSelect.addEventListener('change',()=>{ if(xSelect.value===ySelect.value) ySelect.value=xSelect.value==='torah'?'apocalypse':'torah'; syncUrl(); renderChart(); });
+ySelect.addEventListener('change',()=>{ if(ySelect.value===xSelect.value) xSelect.value=ySelect.value==='date'?'words':'date'; syncUrl(); renderChart(); });
+uncertaintyToggle.addEventListener('click',()=>{
+  if(uncertaintyToggle.disabled) return;
+  uncertaintyOn=!uncertaintyOn;
+  renderChart();
+});
 
-Object.entries(families).forEach(([k,f])=>{legend.insertAdjacentHTML('beforeend',`<div class="legend-item"><span class="legend-swatch" style="background:${f.color}"></span>${f.label}</div>`)});
-const grid=document.getElementById('bookGrid');
-function renderGrid(q=''){grid.innerHTML='';books.filter(b=>b.name.toLowerCase().includes(q.toLowerCase())).forEach(b=>{const f=families[b.family];const btn=document.createElement('button');btn.className='book-card';btn.style.setProperty('--book-color',f.color);btn.innerHTML=`<div class="book-name">${b.name}</div><div class="book-meta">${f.label}<br>${b.dateMin}–${b.dateMax} CE · ${b.words.toLocaleString()} Greek words</div><div class="bar"></div>`;btn.onclick=()=>openDrawer(b);grid.appendChild(btn)})}
-renderGrid();document.getElementById('bookSearch').oninput=e=>renderGrid(e.target.value);
+Object.values(families).forEach(f=>{
+  legend.insertAdjacentHTML('beforeend','<div class="legend-item"><span class="legend-swatch" style="background:'+f.color+'"></span>'+esc(f.label)+'</div>');
+});
 
-const methodDialog=document.getElementById('methodDialog');document.getElementById('methodBtn').onclick=()=>methodDialog.showModal();document.getElementById('methodClose').onclick=()=>methodDialog.close();
+const legendDialog=document.getElementById('legendDialog');
+document.getElementById('legendBtn').addEventListener('click',()=>legendDialog.showModal());
+document.getElementById('legendClose').addEventListener('click',()=>legendDialog.close());
+const methodDialog=document.getElementById('methodDialog');
+document.getElementById('methodBtn').addEventListener('click',()=>methodDialog.showModal());
+document.getElementById('methodClose').addEventListener('click',()=>methodDialog.close());
+
+for(const dialog of [legendDialog,methodDialog]){
+  dialog.addEventListener('click',e=>{ if(e.target===dialog) dialog.close(); });
+}
+window.addEventListener('keydown',e=>{ if(e.key==='Escape'&&drawer.classList.contains('open')) closeDrawer(); });
+
+const ro=new ResizeObserver(()=>renderChart());
+ro.observe(chart);
+syncUrl();
 renderChart();
